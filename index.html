@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Guru</title>
+    <meta name="description" content="Guru: tanya jawab dengan AI untuk tim." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Add to Home Screen: iOS takes the PNG touch icon (not SVG) and these meta tags; others read the manifest. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Guru" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#f5f0e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#2a1a12" media="(prefers-color-scheme: dark)" />
+    <!-- Basis design system (shared with project-tracker). Loaded before the app so app styles can override. -->
+    <link rel="stylesheet" href="https://design-system-bc6.pages.dev/v1/ds.css" />
+    <script type="module" src="https://design-system-bc6.pages.dev/v1/ds.js"></script>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash of the wrong theme.
+      try {
+        const t = localStorage.getItem('theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+    <style>
+      /* Preloader: the Guru bubble while the app's script downloads. Inline, so it paints first;
+         the colors follow the theme so a dark page never flashes white. React replaces it on start. */
+      html { background: #f5f0e6; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme='light']) { background: #2a1a12; } }
+      html[data-theme='dark'] { background: #2a1a12; }
+      .boot { position: fixed; inset: 0; display: grid; place-items: center; animation: boot-in 0.3s ease 0.1s both; }
+      .boot-bubble { width: 64px; height: 64px; border-radius: 16px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.18); overflow: hidden; }
+      .boot-bubble svg { display: block; width: 100%; height: 100%; }
+      .boot-bubble .bubble { transform-box: fill-box; transform-origin: center; animation: boot-pop 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.1s both; }
+      .boot-bubble .dot { transform-box: fill-box; transform-origin: center; animation: boot-dot 1.2s ease-in-out infinite; }
+      .boot-bubble .dot-2 { animation-delay: 0.16s; }
+      .boot-bubble .dot-3 { animation-delay: 0.32s; }
+      @keyframes boot-in { from { opacity: 0; } }
+      @keyframes boot-pop { from { transform: scale(0.6); opacity: 0; } }
+      @keyframes boot-dot { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-3px); } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-bubble .dot { animation: none; }
+        .boot-bubble .bubble { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="boot" role="status" aria-label="Memuat Guru">
+        <div class="boot-bubble">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <defs><linearGradient id="boot-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d2a20" /><stop offset="1" stop-color="#2a1a12" /></linearGradient></defs>
+            <rect width="32" height="32" fill="url(#boot-g)" />
+            <path class="bubble" d="M16 7.5c-5.5 0-9.5 3.4-9.5 7.8 0 2.1.9 3.9 2.4 5.2L7.8 24.5l4.1-1.9c1.2.4 2.5.6 4.1.6 5.5 0 9.5-3.4 9.5-7.8S21.5 7.5 16 7.5z" fill="#fbf8f2" />
+            <circle class="dot" cx="11.5" cy="15.3" r="1.5" fill="#d14210" />
+            <circle class="dot dot-2" cx="16" cy="15.3" r="1.5" fill="#d14210" />
+            <circle class="dot dot-3" cx="20.5" cy="15.3" r="1.5" fill="#d14210" />
+          </svg>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>

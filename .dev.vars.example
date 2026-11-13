@@ -1,0 +1,11 @@
+# Salin ke .dev.vars lalu isi nilainya. JANGAN commit .dev.vars.
+
+# Google OAuth (Google Cloud Console > Credentials)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# Harus sama dengan redirect URI yang terdaftar di Google Console
+GOOGLE_REDIRECT_URI=http://localhost:5175/api/auth/callback
+
+# Hanya untuk development lokal. Mengaktifkan tombol "Dev Login (tanpa Google)"
+# di localhost. Jangan isi di produksi.
+DEV_LOGIN=true

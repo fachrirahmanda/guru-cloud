@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cloud-open-code",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // React app built by Vite; unknown paths fall back to index.html for client-side routing.
+  // /api/* always reaches the Worker first.
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cloud-open-code",
+      "database_id": "189b47b4-3c49-4101-8e3c-5d4a297ddc62",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "05280ed481694f12ba9154c43c5a6b5d" }
+  ],
+  "vars": {
+    "APP_NAME": "Guru"
+  },
+  "observability": { "enabled": true },
+  "triggers": { "crons": [] }
+}

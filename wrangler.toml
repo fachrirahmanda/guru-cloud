@@ -1,0 +1,25 @@
+name = "cloud-open-code"
+compatibility_date = "2024-11-12"
+
+# Entry point Worker (bukan static assets only)
+main = "src/index.js"
+
+[observability]
+enabled = true
+
+[assets]
+directory = "./public"
+
+# Domain custom untuk project ini
+# Setelah deploy, tambahkan domain guru.itsco.men di Cloudflare Dashboard
+# Workers & Pages → cloud-open-code → Settings → Custom domains
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cloud-open-code"
+database_id = "189b47b4-3c49-4101-8e3c-5d4a297ddc62"
+
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "05280ed481694f12ba9154c43c5a6b5d"
