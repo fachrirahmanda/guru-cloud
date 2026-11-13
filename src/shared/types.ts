@@ -76,8 +76,6 @@ export interface AiAnswer {
   keys: string[];
   /** Status or stage changes it proposes (only when asked to change tickets). */
   actions: AiAction[];
-  /** Questions left today. */
-  remaining: number;
 }
 
 /** Admin: the Ask AI (Gemini) setup. The key itself never leaves the server. */

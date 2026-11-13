@@ -6,7 +6,7 @@ import { Select } from '../components/Select';
 import { useHistory, type AiProject, type HistoryItem } from '../history';
 import type { AiImage, AiFile, AiAnswer } from '../../shared/types';
 
-type Usage = { used: number; limit: number; remaining: number };
+type Usage = { used: number };
 type Turn = { question: string; answer: string; keys: string[]; actions: { key: string; to: string }[] };
 type ConversationDetail = {
   id: string;
@@ -154,7 +154,7 @@ export function Chat() {
       reloadUsage();
       bump();
     } catch (err: any) {
-      setError(err.message?.includes('429') ? 'Batas harian tercapai. Coba lagi besok.' : err.message || 'Gagal mendapatkan jawaban.');
+      setError(err.message || 'Gagal mendapatkan jawaban.');
     } finally {
       setLoading(false);
     }
@@ -178,7 +178,6 @@ export function Chat() {
     bump();
   };
 
-  const percent = usage && usage.limit > 0 ? Math.min(100, Math.round((usage.used / usage.limit) * 100)) : 0;
   const title = current ? current.question : 'Tanya Guru AI';
 
   return (
@@ -188,11 +187,7 @@ export function Chat() {
           <span className="field-label">Pemakaian hari ini</span>
           {usage ? (
             <>
-              <span className="num">{usage.used} <span className="hint">/ {usage.limit} pertanyaan</span></span>
-              <div className="usage-bar" role="progressbar" aria-valuemin={0} aria-valuemax={usage.limit} aria-valuenow={usage.used}>
-                <span style={{ width: `${percent}%` }} />
-              </div>
-              <span className="hint">Sisa {usage.remaining} pertanyaan. Reset setiap hari.</span>
+              <span className="num">{usage.used} <span className="hint">pertanyaan hari ini</span></span>
             </>
           ) : (
             <span className="hint">Memuat…</span>

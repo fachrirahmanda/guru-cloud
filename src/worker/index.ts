@@ -216,7 +216,6 @@ const IMAGE_TIMEOUT = 30_000;
 const FULL_IMAGE_TIMEOUT = 60_000;
 const NVIDIA_TIMEOUT = 150_000;
 const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest'];
-const DAILY_LIMIT = 50;
 const HISTORY_DAYS = 90;
 const HISTORY_PAGE = 30;
 const MAX_KEYS = 60;
@@ -248,6 +247,15 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 const RETRY_STATUSES = [404, 429, 500, 502, 503, 504];
+
+/** Kuota atau saldo API habis (bukan rate limit per menit, yang hilang sendiri). Pesan ini ditampilkan ke pengguna. */
+function isQuotaExhausted(status: number, body: string) {
+  if (status === 402) return true;
+  return (status === 429 || status === 403) && /per ?day|daily|billing|insufficient|credit|balance|payment/i.test(body);
+}
+
+const quotaMessage = (provider: string) =>
+  `${provider} API quota or credits are used up. An admin needs to check the billing or quota for this API key, or switch to another key or provider in Settings.`;
 
 function cleanFile(raw: unknown): { name: string; text?: string; pdf?: string } | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -429,6 +437,8 @@ async function askAi(env: Env, config: { key: string; model: string; provider: '
   if (config.provider === 'nvidia') {
     const res = await nvidia(env, config.key, config.model, question, history, images, file);
     if (!res.ok) {
+      const body = await res.clone().text().catch(() => '');
+      if (isQuotaExhausted(res.status, body)) throw new HTTPException(402, { message: quotaMessage('NVIDIA') });
       let message = `NVIDIA didn't answer (${res.status}). Try again.`;
       if (res.status === 429) message = 'NVIDIA rate limit reached. Try again in a minute.';
       else if (res.status === 400 || res.status === 403) message = `NVIDIA refused the request: check the API key and model.`;
@@ -441,7 +451,6 @@ async function askAi(env: Env, config: { key: string; model: string; provider: '
       answer: text.trim(),
       keys: [],
       actions: [],
-      remaining: Math.max(0, DAILY_LIMIT - 1),
     };
   }
 
@@ -525,6 +534,8 @@ async function askAi(env: Env, config: { key: string; model: string; provider: '
 
   if (!res) throw new HTTPException(504, { message: 'Gemini is busy or slow right now. Try again in a minute.' });
   if (!res.ok) {
+    const body = await res.clone().text().catch(() => '');
+    if (isQuotaExhausted(res.status, body)) throw new HTTPException(402, { message: quotaMessage('Gemini') });
     let message = `Gemini didn't answer (${res.status}). Try again.`;
     if (res.status === 429) message = 'Gemini rate limit reached. Try again in a minute.';
     else if (res.status === 400 || res.status === 403) message = `Gemini refused the request: check the API key and model.`;
@@ -543,7 +554,7 @@ async function askAi(env: Env, config: { key: string; model: string; provider: '
     throw new HTTPException(502, { message: "The AI's answer couldn't be read. Try asking again." });
   }
 
-  const answer: { answer: string; keys: string[]; actions: { key: string; field: string; to: string; reason: string }[]; remaining: number } = {
+  const answer: { answer: string; keys: string[]; actions: { key: string; field: string; to: string; reason: string }[] } = {
     answer: typeof parsed.answer === 'string' ? parsed.answer.trim() : '',
     keys: Array.isArray(parsed.keys) ? parsed.keys.slice(0, MAX_KEYS).map((k) => String(k).trim().toUpperCase()) : [],
     actions: Array.isArray(parsed.actions) ? parsed.actions.slice(0, MAX_ACTIONS).map((a) => ({
@@ -552,7 +563,6 @@ async function askAi(env: Env, config: { key: string; model: string; provider: '
       to: String(a?.to ?? '').trim(),
       reason: String(a?.reason ?? '').trim().slice(0, 160),
     })) : [],
-    remaining: Math.max(0, DAILY_LIMIT - 1),
   };
 
   return answer;
@@ -593,12 +603,11 @@ app.post('/ai/ask', requireUser, async (c) => {
     .filter((t) => typeof t?.question === 'string' && typeof t?.answer === 'string')
     .map((t) => ({ question: t.question.slice(0, 500), answer: t.answer.slice(0, 1500) }));
 
-  // Daily limit
+  // Hitungan harian hanya untuk statistik. Tidak ada batas di sini: batas sebenarnya dari provider (kuota atau saldo).
   const day = new Date().toISOString().slice(0, 10);
-  const usage = await c.env.DB.prepare(
-    'INSERT INTO ai_usage (user_id, day, count) VALUES (?, ?, 1) ON CONFLICT (user_id, day) DO UPDATE SET count = count + 1 RETURNING count'
-  ).bind(user.email, day).first<{ count: number }>();
-  if ((usage?.count ?? 0) > DAILY_LIMIT) throw new HTTPException(429, { message: `You've reached today's limit of ${DAILY_LIMIT} questions. It resets tomorrow.` });
+  await c.env.DB.prepare(
+    'INSERT INTO ai_usage (user_id, day, count) VALUES (?, ?, 1) ON CONFLICT (user_id, day) DO UPDATE SET count = count + 1'
+  ).bind(user.email, day).run();
 
   const answer = await askAi(c.env, config, question, history, images, file);
 
@@ -880,11 +889,7 @@ app.get('/ai/status', requireUser, async (c) => {
     'SELECT count FROM ai_usage WHERE user_id = ? AND day = ?'
   ).bind(user.email, day).first<{ count: number }>();
 
-  return c.json({
-    used: usage?.count ?? 0,
-    limit: DAILY_LIMIT,
-    remaining: Math.max(0, DAILY_LIMIT - (usage?.count ?? 0)),
-  });
+  return c.json({ used: usage?.count ?? 0 });
 });
 
 export default {
