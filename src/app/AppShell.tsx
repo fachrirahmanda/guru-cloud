@@ -118,13 +118,13 @@ function SidebarBody() {
   }, [recent]);
 
   const togglePin = async (item: HistoryItem) => {
-    await api(`/api/ai/questions/${item.id}`, { method: 'PATCH', body: { pinned: !item.pinned } }).catch(() => {});
+    await api(`/api/ai/conversations/${item.id}`, { method: 'PATCH', body: { pinned: !item.pinned } }).catch(() => {});
     bump();
   };
 
   const remove = async (item: HistoryItem) => {
-    if (!window.confirm('Hapus pertanyaan ini dari riwayat?')) return;
-    await api(`/api/ai/questions/${item.id}`, { method: 'DELETE' }).catch(() => {});
+    if (!window.confirm('Hapus percakapan ini dari riwayat?')) return;
+    await api(`/api/ai/conversations/${item.id}`, { method: 'DELETE' }).catch(() => {});
     if (pathname === `/chat/${item.id}`) navigate('/');
     bump();
   };

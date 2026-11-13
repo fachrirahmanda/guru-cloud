@@ -567,14 +567,26 @@ app.post('/ai/ask', requireUser, async (c) => {
   if (!config) throw new HTTPException(503, { message: 'Ask AI is not set up yet. An admin can add an API key under Settings → AI.' });
 
   const user = c.get('user') as { email: string; is_admin: boolean };
-  const body = await c.req.json<{ question?: string; history?: { question: string; answer: string }[]; images?: { mimeType: string; data: string }[]; file?: { name: string; text?: string; pdf?: string }; projectId?: string | null }>();
+  const body = await c.req.json<{ question?: string; history?: { question: string; answer: string }[]; images?: { mimeType: string; data: string }[]; file?: { name: string; text?: string; pdf?: string }; conversationId?: string | null; projectId?: string | null }>();
 
   const file = cleanFile(body.file);
   const question = body.question?.trim() || (file ? 'Read the attached file and summarize what it shows.' : '');
   const images = cleanImages(body.images);
-  const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null;
+  const requestedConversation = typeof body.conversationId === 'string' && body.conversationId ? body.conversationId : null;
   if (!question) throw new HTTPException(400, { message: 'Type a question or attach a file' });
   if (question.length > 500) throw new HTTPException(400, { message: 'Keep it under 500 characters' });
+
+  // Lanjutan percakapan: harus milik user ini. Project diwarisi dari percakapan, bukan dari klien.
+  let conversationId: string = crypto.randomUUID();
+  let projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null;
+  if (requestedConversation) {
+    const existing = await c.env.DB.prepare(
+      'SELECT project_id FROM ai_questions WHERE conversation_id = ? AND user_id = ? LIMIT 1'
+    ).bind(requestedConversation, user.email).first<{ project_id: string | null }>();
+    if (!existing) throw new HTTPException(404, { message: 'Conversation not found' });
+    conversationId = requestedConversation;
+    projectId = existing.project_id;
+  }
 
   const history = (Array.isArray(body.history) ? body.history : [])
     .slice(-3)
@@ -594,13 +606,13 @@ app.post('/ai/ask', requireUser, async (c) => {
   const questionId = crypto.randomUUID();
   c.executionCtx.waitUntil(
     c.env.DB.batch([
-      c.env.DB.prepare('INSERT INTO ai_questions (id, user_id, question, answer, keys, created_at, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .bind(questionId, user.email, question, answer.answer, JSON.stringify(answer.keys), t, projectId),
+      c.env.DB.prepare('INSERT INTO ai_questions (id, user_id, question, answer, keys, created_at, project_id, conversation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(questionId, user.email, question, answer.answer, JSON.stringify(answer.keys), t, projectId, conversationId),
       c.env.DB.prepare('DELETE FROM ai_questions WHERE user_id = ? AND created_at < ?').bind(user.email, t - HISTORY_DAYS * 86_400_000),
     ]).then(() => undefined, (err: unknown) => console.error('ai history', err)),
   );
 
-  return c.json({ ...answer, id: questionId });
+  return c.json({ ...answer, id: questionId, conversationId });
 });
 
 // ============================================================
@@ -620,6 +632,19 @@ const questionItem = (r: QuestionRow) => ({
 });
 
 /** Riwayat, dengan pencarian (q), filter project (project = id, atau "none" untuk tanpa project), dan pinned=1. */
+type ConversationRow = { id: string; question: string; created_at: number; project_id: string | null; pinned: number; turns: number };
+
+/** Satu item sidebar/project = satu percakapan. question = pertanyaan pertama; turns = jumlah giliran. */
+const conversationItem = (r: ConversationRow) => ({
+  id: r.id,
+  question: r.question,
+  createdAt: r.created_at,
+  projectId: r.project_id,
+  pinned: r.pinned === 1,
+  turns: r.turns,
+});
+
+/** Daftar percakapan, dengan pencarian (q), filter project (project = id, atau "none"), dan pinned=1. */
 app.get('/ai/history', requireUser, async (c) => {
   const user = c.get('user') as { email: string };
   const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10));
@@ -645,56 +670,76 @@ app.get('/ai/history', requireUser, async (c) => {
   const whereSql = where.join(' AND ');
 
   const { results } = await c.env.DB.prepare(
-    `SELECT id, question, answer, keys, created_at, project_id, pinned FROM ai_questions WHERE ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-  ).bind(...binds, limit, offset).all<QuestionRow>();
+    `SELECT q.conversation_id AS id,
+            (SELECT f.question FROM ai_questions f
+              WHERE f.conversation_id = q.conversation_id AND f.user_id = q.user_id
+              ORDER BY f.created_at ASC LIMIT 1) AS question,
+            MAX(q.created_at) AS created_at,
+            MAX(q.project_id) AS project_id,
+            MAX(q.pinned) AS pinned,
+            COUNT(*) AS turns
+       FROM ai_questions q
+      WHERE ${whereSql}
+      GROUP BY q.conversation_id
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?`
+  ).bind(...binds, limit, offset).all<ConversationRow>();
 
   const countRow = await c.env.DB.prepare(
-    `SELECT COUNT(*) as cnt FROM ai_questions WHERE ${whereSql}`
+    `SELECT COUNT(DISTINCT conversation_id) AS cnt FROM ai_questions WHERE ${whereSql}`
   ).bind(...binds).first<{ cnt: number }>();
 
   return c.json({
-    items: results.map(questionItem),
+    items: results.map(conversationItem),
     hasMore: (countRow?.cnt ?? 0) > offset + results.length,
   });
 });
 
-app.get('/ai/questions/:id', requireUser, async (c) => {
+/** Satu percakapan lengkap, semua giliran urut dari yang pertama. */
+app.get('/ai/conversations/:id', requireUser, async (c) => {
   const user = c.get('user') as { email: string };
-  const row = await c.env.DB.prepare(
-    'SELECT id, question, answer, keys, created_at, project_id, pinned FROM ai_questions WHERE id = ? AND user_id = ?'
-  ).bind(c.req.param('id'), user.email).first<QuestionRow>();
-  if (!row) throw new HTTPException(404, { message: 'Not found' });
-  return c.json(questionItem(row));
+  const id = c.req.param('id');
+  const { results } = await c.env.DB.prepare(
+    'SELECT id, question, answer, keys, created_at, project_id, pinned FROM ai_questions WHERE conversation_id = ? AND user_id = ? ORDER BY created_at ASC'
+  ).bind(id, user.email).all<QuestionRow>();
+  if (results.length === 0) throw new HTTPException(404, { message: 'Not found' });
+  const first = results[0];
+  return c.json({
+    id,
+    projectId: first.project_id,
+    pinned: results.some((r: QuestionRow) => r.pinned === 1),
+    turns: results.map(questionItem),
+  });
 });
 
-/** Pin atau pindah project untuk satu pertanyaan. projectId null = keluarkan dari project. */
-app.patch('/ai/questions/:id', requireUser, async (c) => {
+/** Pin atau pindah project untuk seluruh percakapan. projectId null = keluarkan dari project. */
+app.patch('/ai/conversations/:id', requireUser, async (c) => {
   const user = c.get('user') as { email: string };
   const body = await c.req.json<{ pinned?: boolean; projectId?: string | null }>();
   const id = c.req.param('id');
   if (typeof body.pinned === 'boolean') {
-    await c.env.DB.prepare('UPDATE ai_questions SET pinned = ? WHERE id = ? AND user_id = ?').bind(body.pinned ? 1 : 0, id, user.email).run();
+    await c.env.DB.prepare('UPDATE ai_questions SET pinned = ? WHERE conversation_id = ? AND user_id = ?').bind(body.pinned ? 1 : 0, id, user.email).run();
   }
   if (body.projectId !== undefined) {
     if (body.projectId !== null) {
       const owned = await c.env.DB.prepare('SELECT id FROM ai_projects WHERE id = ? AND user_id = ?').bind(body.projectId, user.email).first();
       if (!owned) throw new HTTPException(404, { message: 'Project not found' });
     }
-    await c.env.DB.prepare('UPDATE ai_questions SET project_id = ? WHERE id = ? AND user_id = ?').bind(body.projectId, id, user.email).run();
+    await c.env.DB.prepare('UPDATE ai_questions SET project_id = ? WHERE conversation_id = ? AND user_id = ?').bind(body.projectId, id, user.email).run();
   }
   return c.json({ ok: true });
 });
 
-app.delete('/ai/questions/:id', requireUser, async (c) => {
+app.delete('/ai/conversations/:id', requireUser, async (c) => {
   const user = c.get('user') as { email: string };
-  await c.env.DB.prepare('DELETE FROM ai_questions WHERE id = ? AND user_id = ?').bind(c.req.param('id'), user.email).run();
+  await c.env.DB.prepare('DELETE FROM ai_questions WHERE conversation_id = ? AND user_id = ?').bind(c.req.param('id'), user.email).run();
   return c.json({ ok: true });
 });
 
 app.get('/ai/projects', requireUser, async (c) => {
   const user = c.get('user') as { email: string };
   const { results } = await c.env.DB.prepare(
-    `SELECT p.id, p.name, p.created_at, COUNT(q.id) AS count
+    `SELECT p.id, p.name, p.created_at, COUNT(DISTINCT q.conversation_id) AS count
        FROM ai_projects p LEFT JOIN ai_questions q ON q.project_id = p.id AND q.user_id = p.user_id
       WHERE p.user_id = ? GROUP BY p.id ORDER BY p.created_at ASC`
   ).bind(user.email).all<{ id: string; name: string; created_at: number; count: number }>();

@@ -68,7 +68,7 @@ export function ProjectView() {
           ) : (
             <h1>{project?.name ?? '…'}</h1>
           )}
-          <p>{items.length} pertanyaan di project ini</p>
+          <p>{items.length} percakapan di project ini</p>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn btn-primary" onClick={() => navigate(`/?project=${encodeURIComponent(id)}`)}>

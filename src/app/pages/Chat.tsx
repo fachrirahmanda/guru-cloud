@@ -8,6 +8,12 @@ import type { AiImage, AiFile, AiAnswer } from '../../shared/types';
 
 type Usage = { used: number; limit: number; remaining: number };
 type Turn = { question: string; answer: string; keys: string[]; actions: { key: string; to: string }[] };
+type ConversationDetail = {
+  id: string;
+  projectId: string | null;
+  pinned: boolean;
+  turns: { question: string; answer: string; keys: string[]; createdAt: number }[];
+};
 
 export function Chat() {
   // /chat/:id membuka satu pertanyaan tersimpan. /, /chat, dan ?project=… adalah chat baru.
@@ -42,11 +48,12 @@ export function Chat() {
     }
     let alive = true;
     setOpening(true);
-    api<HistoryItem>(`/api/ai/questions/${id}`)
-      .then((item) => {
+    api<ConversationDetail>(`/api/ai/conversations/${id}`)
+      .then((conv) => {
         if (!alive) return;
-        setCurrent(item);
-        setTurns([{ question: item.question, answer: item.answer, keys: item.keys, actions: [] }]);
+        const first = conv.turns[0];
+        setCurrent({ id: conv.id, question: first.question, createdAt: first.createdAt, projectId: conv.projectId, pinned: conv.pinned, turns: conv.turns.length });
+        setTurns(conv.turns.map((t) => ({ question: t.question, answer: t.answer, keys: t.keys, actions: [] })));
       })
       .catch(() => alive && setError('Pertanyaan ini tidak ditemukan.'))
       .finally(() => alive && setOpening(false));
@@ -127,18 +134,20 @@ export function Chat() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api<AiAnswer & { id: string }>('/api/ai/ask', {
+      const res = await api<AiAnswer & { id: string; conversationId: string }>('/api/ai/ask', {
         method: 'POST',
         body: {
           question: asked,
           history: turns.map((t) => ({ question: t.question, answer: t.answer })),
           images,
           file,
+          conversationId: current?.id ?? null,
           projectId: current?.projectId ?? projectParam,
         },
       });
       setTurns((prev) => [...prev, { question: asked, answer: res.answer, keys: res.keys, actions: res.actions }]);
-      if (!current) setCurrent({ id: res.id, question: asked, answer: res.answer, keys: res.keys, createdAt: Date.now(), projectId: projectParam, pinned: false });
+      if (!current) setCurrent({ id: res.conversationId, question: asked, createdAt: Date.now(), projectId: projectParam, pinned: false, turns: 1 });
+      else setCurrent({ ...current, turns: current.turns + 1 });
       setQuestion('');
       setImages([]);
       setFile(null);
@@ -155,7 +164,7 @@ export function Chat() {
   const togglePin = async () => {
     if (!current) return;
     const pinned = !current.pinned;
-    await api(`/api/ai/questions/${current.id}`, { method: 'PATCH', body: { pinned } }).catch(() => {});
+    await api(`/api/ai/conversations/${current.id}`, { method: 'PATCH', body: { pinned } }).catch(() => {});
     setCurrent({ ...current, pinned });
     bump();
   };
@@ -163,7 +172,7 @@ export function Chat() {
   const moveToProject = async (projectId: string) => {
     if (!current) return;
     const next = projectId || null;
-    await api(`/api/ai/questions/${current.id}`, { method: 'PATCH', body: { projectId: next } }).catch(() => {});
+    await api(`/api/ai/conversations/${current.id}`, { method: 'PATCH', body: { projectId: next } }).catch(() => {});
     setCurrent({ ...current, projectId: next });
     reloadProjects();
     bump();

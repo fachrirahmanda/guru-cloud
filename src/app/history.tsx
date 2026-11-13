@@ -1,14 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 
-/** Satu pertanyaan Ask AI yang tersimpan. */
+/** Satu percakapan Ask AI di sidebar dan daftar project. question = pertanyaan pertama. */
 export type HistoryItem = {
   id: string;
   question: string;
-  answer: string;
-  keys: string[];
   createdAt: number;
   projectId: string | null;
   pinned: boolean;
+  turns: number;
 };
 
 export type AiProject = { id: string; name: string; count: number };
