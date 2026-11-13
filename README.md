@@ -1,130 +1,128 @@
 # Guru
 
-Guru adalah aplikasi chat AI untuk tim kecil. Tim bisa mengobrol dengan model AI (Google Gemini atau NVIDIA), menyimpan riwayat tanya-jawab, mengelompokkan pertanyaan ke dalam project, dan mengelola anggota yang boleh masuk. Aplikasi ini berjalan sepenuhnya di **Cloudflare Workers**.
+Guru is a team chat app for asking questions to an AI model. Team members sign in with Google, chat with an AI model, keep their conversation history, group questions into projects, and an admin decides who is allowed in. The whole app runs on **Cloudflare Workers**.
 
-## Fitur
+The AI provider is designed to be swappable. The current code path is hard-wired to two providers, and making the provider configurable is planned work (see [Customizing the AI provider](#customizing-the-ai-provider)).
 
-- **Login dengan Google OAuth.** Hanya email yang terdaftar di tabel `members` yang bisa masuk.
-- **Manajemen anggota.** Admin bisa menambah dan menghapus anggota.
-- **Chat AI.** Pertanyaan dijawab oleh model AI dengan riwayat percakapan. Pengguna bisa melampirkan gambar dan file (teks/PDF).
-- **Project.** Riwayat pertanyaan bisa dikelompokkan ke dalam project, lalu diubah nama atau dihapus.
-- **Pengaturan AI (khusus admin).** Provider (Gemini atau NVIDIA), model, dan API key bisa diatur dari halaman Settings. API key yang disimpan di database dienkripsi.
-- **Profil.** Pengguna bisa melihat dan mengatur profilnya.
+## Features
 
-## Teknologi
+- **Google sign-in (OAuth).** Only emails listed in the `members` table can sign in.
+- **Member management.** Admins can add and remove members.
+- **AI chat.** Questions are answered by an AI model with conversation history. Users can attach images and text/PDF files.
+- **Projects.** Questions can be grouped into projects, renamed, and deleted.
+- **AI settings (admin only).** Provider, model, and API key can be set from the Settings page. API keys stored in the database are encrypted.
+- **Profile.** Users can view and manage their own profile.
 
-| Bagian | Teknologi |
+## Tech stack
+
+| Layer | Technology |
 |---|---|
 | Frontend | React 19, TypeScript, Vite, React Router |
-| Backend | Cloudflare Worker dengan Hono, route di bawah `/api/*` |
-| Database | Cloudflare D1 (SQLite), migrasi di `migrations/` |
-| Session | Cloudflare KV (namespace `SESSIONS`) |
-| AI | Google Gemini API dan NVIDIA API (OpenAI-compatible) |
+| Backend | Cloudflare Worker with Hono; API routes under `/api/*` |
+| Database | Cloudflare D1 (SQLite); migrations in `migrations/` |
+| Sessions | Cloudflare KV (`SESSIONS` namespace) |
+| AI | Pluggable provider (currently Google Gemini and NVIDIA) |
 
-## Struktur folder
+## Project structure
 
 ```
 src/
-  app/            Frontend: halaman, komponen, dan API client
+  app/            Frontend: pages, components, API client
     pages/        Chat, ProjectView, Settings, Profile, Login
-    components/   Komponen UI bersama
+    components/   Shared UI components
   worker/
-    index.ts      Entry point Worker, semua route /api, dan logika AI
-    env.d.ts      Tipe binding Env (hasil `npm run typegen`)
+    index.ts      Worker entry point, all /api routes, and AI logic
+    env.d.ts      Env binding types (regenerate with `npm run typegen`)
   shared/
-    types.ts      Tipe yang dipakai frontend dan Worker
-migrations/       Perubahan skema database (urut: 0001, 0002, ...)
-public/           Aset statis: ikon, manifest
-wrangler.jsonc    Konfigurasi Cloudflare Worker (dipakai saat deploy)
+    types.ts      Types shared by the frontend and the Worker
+migrations/       Database schema changes, applied in order (0001, 0002, ...)
+public/           Static assets: icons, manifest
+wrangler.jsonc    Cloudflare Worker configuration
 ```
 
-## Menjalankan secara lokal
+## Running locally
 
-### 1. Install dependency
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 2. Siapkan variabel lingkungan
+### 2. Configure environment variables
 
-Salin file contoh lalu isi nilainya:
+Copy the example file and fill in the values:
 
 ```bash
 cp .dev.vars.example .dev.vars
 ```
 
-Variabel yang tersedia (lihat `.dev.vars.example`):
+Required for sign-in (see `.dev.vars.example`):
 
-| Nama | Keterangan |
+| Name | Description |
 |---|---|
-| `GOOGLE_CLIENT_ID` | Client ID dari Google Cloud Console (Credentials) |
-| `GOOGLE_CLIENT_SECRET` | Client secret dari Google Cloud Console |
-| `GOOGLE_REDIRECT_URI` | Harus sama dengan redirect URI yang terdaftar di Google Console. Untuk lokal: `http://localhost:5175/api/auth/callback` |
-| `DEV_LOGIN` | Isi `true` hanya untuk development lokal. Mengaktifkan tombol "Dev Login" tanpa Google di localhost. Jangan diisi di produksi. |
+| `GOOGLE_CLIENT_ID` | OAuth client ID from Google Cloud Console (Credentials) |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret from Google Cloud Console |
+| `GOOGLE_REDIRECT_URI` | Must match a redirect URI registered in Google Console. For local dev: `http://localhost:5175/api/auth/callback` |
+| `DEV_LOGIN` | Set to `true` only for local development. Enables a "Dev Login" button on localhost that skips Google sign-in. Never set this in production. |
 
-Opsional, untuk AI (bisa juga diisi lewat halaman Settings):
+AI provider variables are optional here, because the API key and model can also be set from the Settings page. See [Customizing the AI provider](#customizing-the-ai-provider).
 
-| Nama | Keterangan |
-|---|---|
-| `GEMINI_API_KEY` | API key Google AI Studio |
-| `GEMINI_MODEL` | Model Gemini (default: `gemini-flash-latest`) |
-| `NVIDIA_API_KEY` | API key NVIDIA (diawali `nvapi-`) |
-| `NVIDIA_MODEL` | Model NVIDIA |
+> **Never commit `.dev.vars`.** It is listed in `.gitignore`. Do not put secret values in any tracked file.
 
-> **Jangan commit `.dev.vars`.** File ini sudah di-ignore oleh `.gitignore`. Jangan memasukkan nilai secret ke file lain yang ter-track git.
-
-### 3. Migrasi database lokal
+### 3. Apply database migrations locally
 
 ```bash
 npm run db:migrate:local
 ```
 
-### 4. Jalankan aplikasi
+### 4. Start the dev server
 
 ```bash
 npm run dev
 ```
 
-Buka `http://localhost:5175` di browser. Tambahkan email Anda ke tabel `members` (lewat halaman admin, atau langsung di database lokal) sebelum login.
+Open `http://localhost:5175`. Add your email to the `members` table (from the admin UI, or directly in the local database) before signing in.
 
-## Deploy ke Cloudflare
+## Deploying to Cloudflare
 
-1. Login ke Cloudflare: `npx wrangler login`
-2. Buat database D1 dan KV namespace jika belum ada, lalu sesuaikan `database_id` dan `id` di `wrangler.jsonc`.
-3. Jalankan migrasi ke remote:
+1. Log in to Cloudflare: `npx wrangler login`
+2. Create the D1 database and KV namespace if they don't exist yet, then update `database_id` and the KV `id` in `wrangler.jsonc`.
+3. Apply migrations to the remote database:
    ```bash
    npm run db:migrate:remote
    ```
-4. Set secret produksi (jangan lewat file):
+4. Set production secrets with Wrangler (not in files):
    ```bash
    npx wrangler secret put GOOGLE_CLIENT_SECRET
-   npx wrangler secret put GEMINI_API_KEY   # atau NVIDIA_API_KEY
    ```
 5. Deploy:
    ```bash
    npm run deploy
    ```
 
-Set `GOOGLE_REDIRECT_URI` ke URL produksi (misalnya `https://<domain>/api/auth/callback`) dan daftarkan URL yang sama di Google Console.
+Set `GOOGLE_REDIRECT_URI` to your production URL (for example `https://<your-domain>/api/auth/callback`) and register the same URI in Google Console.
 
-## Script npm
+## npm scripts
 
-| Script | Fungsi |
+| Script | Purpose |
 |---|---|
-| `npm run dev` | Jalankan Vite dev server dengan Worker lokal |
-| `npm run build` | Cek tipe TypeScript dan build produksi |
-| `npm run preview` | Preview hasil build |
-| `npm run db:migrate:local` | Terapkan migrasi ke D1 lokal |
-| `npm run db:migrate:remote` | Terapkan migrasi ke D1 produksi |
-| `npm run deploy` | Build lalu deploy ke Cloudflare |
-| `npm run typegen` | Generate ulang tipe `Env` di `src/worker/env.d.ts` |
+| `npm run dev` | Start the Vite dev server with the local Worker |
+| `npm run build` | Type-check and build for production |
+| `npm run preview` | Preview the production build |
+| `npm run db:migrate:local` | Apply migrations to the local D1 database |
+| `npm run db:migrate:remote` | Apply migrations to the production D1 database |
+| `npm run deploy` | Build and deploy to Cloudflare |
+| `npm run typegen` | Regenerate the `Env` types in `src/worker/env.d.ts` |
 
-## Catatan
+## Customizing the AI provider
 
-- `schema.sql` adalah gambaran skema awal. Perubahan skema yang berlaku dilakukan lewat file di `migrations/`.
-- Di folder root ada dua file konfigurasi Wrangler, `wrangler.jsonc` dan `wrangler.toml`, dengan isi yang berbeda (entry point `src/worker/index.ts` di `.jsonc`, `src/index.js` di `.toml`). Folder `functions/` dan `src/index.js` adalah sisa dari versi sebelumnya. Sebaiknya hanya satu konfigurasi yang dipertahankan sebelum deploy.
+The goal is to let you plug in any AI provider (OpenAI-compatible APIs, Anthropic, a self-hosted model, and so on) without changing the chat UI. Today, the provider logic in `src/worker/index.ts` calls Google Gemini and NVIDIA directly, so adding a provider currently means adding a new function there and a branch in the provider selection.
 
-## Lisensi
+## Notes
 
-Belum ditentukan.
+- `schema.sql` is an initial snapshot of the schema. Actual schema changes live in `migrations/`.
+- The repo contains two Wrangler configuration files, `wrangler.jsonc` and `wrangler.toml`, with different contents (`main` points to `src/worker/index.ts` in one and `src/index.js` in the other). The `functions/` folder and `src/index.js` are remnants of an earlier setup. Keep one configuration before deploying.
+
+## License
+
+Not yet decided.
